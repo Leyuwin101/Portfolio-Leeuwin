@@ -21,6 +21,24 @@
     let mesh;
     let animationId;
 
+    function syncWaveTheme() {
+        if (!renderer || !mesh || !window.portfolioAnimationTheme) return;
+
+        const colors = window.portfolioAnimationTheme.getColors();
+        const uniforms = mesh.material.uniforms;
+        uniforms.waveColor.value.set(
+            colors.wave[0] / 255,
+            colors.wave[1] / 255,
+            colors.wave[2] / 255
+        );
+        uniforms.backgroundColor.value.set(
+            colors.waveBackground[0] / 255,
+            colors.waveBackground[1] / 255,
+            colors.waveBackground[2] / 255
+        );
+        uniforms.waveContrast.value = colors.waveContrast;
+    }
+
     const targetPointer = { x: 0, y: 0 };
     const pointer = { x: 0, y: 0 };
 
@@ -39,9 +57,8 @@
         }
 
         try {
-            // -------------------------------------------------
-            // Renderer
-            // -------------------------------------------------
+            const initialLightMode =
+                document.documentElement.dataset.theme === "light";
 
             renderer = new THREE.WebGLRenderer({
                 canvas,
@@ -53,10 +70,8 @@
             renderer.setPixelRatio(
                 Math.min(window.devicePixelRatio || 1, 1.75)
             );
+            renderer.setClearColor(initialLightMode ? 0xF8FAFC : 0x080808, 1);
 
-            renderer.setClearColor(0x080808, 1);
-
-            // Make canvas itself fullscreen
             canvas.style.position = "fixed";
             canvas.style.inset = "0";
             canvas.style.width = "100vw";
@@ -65,50 +80,23 @@
             canvas.style.zIndex = "-1";
             canvas.style.pointerEvents = "none";
 
-            // -------------------------------------------------
-            // Scene
-            // -------------------------------------------------
-
             scene = new THREE.Scene();
-
-            camera = new THREE.OrthographicCamera(
-                -1,
-                1,
-                1,
-                -1,
-                0,
-                1
-            );
-
-            // -------------------------------------------------
-            // Fullscreen triangle
-            //
-            // This is better than a normal quad because it
-            // completely covers the viewport without diagonal
-            // gaps or half-rendering issues.
-            // -------------------------------------------------
+            camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
 
             const geometry = new THREE.BufferGeometry();
-
             const positions = new Float32Array([
                 -1, -1, 0,
                  3, -1, 0,
                 -1,  3, 0
             ]);
-
             geometry.setAttribute(
                 "position",
                 new THREE.BufferAttribute(positions, 3)
             );
 
-            // -------------------------------------------------
-            // Shader
-            // -------------------------------------------------
-
             const material = new THREE.RawShaderMaterial({
                 vertexShader: vertexShaderElement.textContent,
                 fragmentShader: fragmentShaderElement.textContent,
-
                 uniforms: {
                     resolution: {
                         value: new THREE.Vector2(
@@ -116,36 +104,26 @@
                             window.innerHeight
                         )
                     },
-
-                    time: {
-                        value: 0
+                    time: { value: 0 },
+                    xScale: { value: 1.15 },
+                    yScale: { value: 0.42 },
+                    distortion: { value: 0.065 },
+                    pointer: { value: new THREE.Vector2(0, 0) },
+                    waveColor: {
+                        value: initialLightMode
+                            ? new THREE.Vector3(0.34, 0.48, 0.62)
+                            : new THREE.Vector3(1, 1, 1)
                     },
-
-                    xScale: {
-                        value: 1.15
+                    backgroundColor: {
+                        value: new THREE.Vector3()
                     },
-
-                    yScale: {
-                        value: 0.42
-                    },
-
-                    distortion: {
-                        value: 0.065
-                    },
-
-                    pointer: {
-                        value: new THREE.Vector2(0, 0)
-                    }
+                    waveContrast: { value: 1 }
                 }
             });
 
-            mesh = new THREE.Mesh(
-                geometry,
-                material
-            );
-
+            mesh = new THREE.Mesh(geometry, material);
             scene.add(mesh);
-
+            syncWaveTheme();
             resizeWebGL();
 
             window.addEventListener(
@@ -154,21 +132,17 @@
                 { passive: true }
             );
 
-            // -------------------------------------------------
-            // Motion
-            // -------------------------------------------------
+            window.addEventListener("portfolio-theme-change", (event) => {
+                syncWaveTheme();
+                renderer.render(scene, camera);
+            });
 
             if (reduceMotion) {
                 material.uniforms.time.value = 0.8;
-
-                renderer.render(
-                    scene,
-                    camera
-                );
+                renderer.render(scene, camera);
             } else {
                 animate();
             }
-
         } catch (error) {
             console.warn(
                 "WebGL background could not initialize.",
@@ -177,80 +151,59 @@
         }
     }
 
-    // =========================================================
-    // RESIZE
-    // =========================================================
-
     function resizeWebGL() {
         if (!renderer || !mesh) return;
 
         const width = window.innerWidth;
         const height = window.innerHeight;
-
         const pixelRatio = Math.min(
             window.devicePixelRatio || 1,
             1.75
         );
 
         renderer.setPixelRatio(pixelRatio);
-
-        renderer.setSize(
-            width,
-            height,
-            false
-        );
-
-        // IMPORTANT:
-        // Shader resolution must use the actual drawing buffer
-        // size, not just CSS viewport size.
-
+        renderer.setSize(width, height, false);
         mesh.material.uniforms.resolution.value.set(
             width * pixelRatio,
             height * pixelRatio
         );
-
-        renderer.render(
-            scene,
-            camera
-        );
+        renderer.render(scene, camera);
     }
 
-    // =========================================================
-    // ANIMATION
-    // =========================================================
-
     function animate() {
+        if (document.hidden) {
+            animationId = null;
+            return;
+        }
+
         animationId = requestAnimationFrame(animate);
-
-        pointer.x +=
-            (targetPointer.x - pointer.x) * 0.035;
-
-        pointer.y +=
-            (targetPointer.y - pointer.y) * 0.035;
-
+        pointer.x += (targetPointer.x - pointer.x) * 0.035;
+        pointer.y += (targetPointer.y - pointer.y) * 0.035;
         mesh.material.uniforms.time.value += 0.0045;
-
         mesh.material.uniforms.pointer.value.set(
             pointer.x,
             pointer.y
         );
-
-        renderer.render(
-            scene,
-            camera
-        );
+        syncWaveTheme();
+        renderer.render(scene, camera);
     }
 
-    // =========================================================
-    // POINTER
-    // =========================================================
+    document.addEventListener("visibilitychange", () => {
+        if (!renderer || reduceMotion) return;
+
+        if (document.hidden) {
+            cancelAnimationFrame(animationId);
+            animationId = null;
+        } else if (!animationId) {
+            animate();
+        }
+    });
 
     document.addEventListener(
         "pointermove",
         (event) => {
             targetPointer.x =
                 (event.clientX / window.innerWidth) * 2 - 1;
-
             targetPointer.y =
                 (event.clientY / window.innerHeight) * -2 + 1;
 
@@ -262,14 +215,12 @@
             ) {
                 const px = targetPointer.x * 5;
                 const py = targetPointer.y * 4;
-
                 portrait.style.transform =
                     `translate(${px}px, ${py}px)`;
             }
         },
         { passive: true }
     );
-
     // =========================================================
     // PAGE LOADING
     // =========================================================
@@ -382,6 +333,56 @@
             (item) =>
                 item.classList.add("is-visible")
         );
+    }
+
+    // Keep the navigation in sync with the section in view.
+    const sectionLinks = [...document.querySelectorAll('.nav a[href^="#"]')];
+    const sections = sectionLinks
+        .map((link) => document.querySelector(link.getAttribute("href")))
+        .filter(Boolean);
+
+    if ("IntersectionObserver" in window && sections.length) {
+        const sectionObserver = new IntersectionObserver(
+            (entries) => {
+                entries.forEach((entry) => {
+                    if (!entry.isIntersecting) return;
+                    sectionLinks.forEach((link) => {
+                        const active = link.hash === `#${entry.target.id}`;
+                        link.classList.toggle("is-active", active);
+                        if (active) link.setAttribute("aria-current", "location");
+                        else link.removeAttribute("aria-current");
+                    });
+                });
+            },
+            { rootMargin: "-35% 0px -55% 0px", threshold: 0 }
+        );
+
+        sections.forEach((section) => sectionObserver.observe(section));
+    }
+
+    document.querySelectorAll(".project").forEach((project) => {
+        project.addEventListener("pointermove", (event) => {
+            const bounds = project.getBoundingClientRect();
+            project.style.setProperty("--spot-x", `${event.clientX - bounds.left}px`);
+            project.style.setProperty("--spot-y", `${event.clientY - bounds.top}px`);
+        }, { passive: true });
+    });
+
+    if (!reduceMotion && window.matchMedia("(pointer: fine)").matches) {
+        document.querySelectorAll(".magnetic").forEach((button) => {
+            button.addEventListener("pointermove", (event) => {
+                const bounds = button.getBoundingClientRect();
+                const x = (event.clientX - bounds.left - bounds.width / 2) * 0.08;
+                const y = (event.clientY - bounds.top - bounds.height / 2) * 0.08;
+                button.style.setProperty("--mag-x", `${x.toFixed(1)}px`);
+                button.style.setProperty("--mag-y", `${y.toFixed(1)}px`);
+            }, { passive: true });
+
+            button.addEventListener("pointerleave", () => {
+                button.style.setProperty("--mag-x", "0px");
+                button.style.setProperty("--mag-y", "0px");
+            });
+        });
     }
 
     // =========================================================
